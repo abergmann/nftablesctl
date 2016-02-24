@@ -1,0 +1,148 @@
+#!/bin/sh
+
+# Author: Alexander Bergmann <abergmann@suse.com>, 2016-02-24
+#
+# nftables control script to load, save and test nftables rules
+
+# Default settings
+NFT=/usr/sbin/nft
+FIREWALL=/etc/nftables/firewall.nft
+FORCE=0
+
+nft_save() {
+	if [ -f $FIREWALL ]; then
+		MSG="Overwrite"
+	else 
+		MSG="Write"
+	fi
+	if [ $FORCE == 1 ]; then
+		echo "$MSG nftables rules storage '$FIREWALL'."
+	else
+	        # Prompt
+		echo -n "$MSG nftables rules storage '$FIREWALL' (y/N): "
+        	read ANSWER
+        	if [ "x$ANSWER" != "xy" ]; then
+        	        exit 1
+        	fi
+	fi
+        # Write all nftables rules to files
+        $NFT list ruleset > $FIREWALL
+}
+
+nft_load() {
+	# Test if ruleset file exists.
+        if [ ! -f $FIREWALL ]; then
+                echo "Error: nftables rules storage does not exist!"
+                exit 1
+        fi
+
+	# Clean ruleset and load existing nftables rules from file.
+	nft_clean
+        $NFT -f $FIREWALL
+}
+
+nft_clean() {
+	# Check for existing nftables entries and delete them.
+        TABLES=$($NFT list tables | cut -d " " -f3)
+        if [ "x$TABLES" != "x" ]; then
+                for table in $TABLES; do
+                        $NFT delete table $table
+                done
+        fi
+}
+
+nft_status() {
+	RULES=$(nft_list | wc -l)
+	if [ $RULES -gt 0 ]; then
+		echo "nftables rules active!"
+		exit 2
+	else
+		echo "nftables rules NOT active!"
+		exit 3
+	fi
+}
+
+nft_test() {
+	# Test nftables rules for 30 seconds.
+	# Use Ctrl+C for accepting the loaded configuration. 
+	trap "
+        	echo ' Keep currently loaded nftables rules!';
+        	exit;
+	" SIGINT
+	echo "Loading nftables rules from '$FIREWALL' for 10 seconds."
+	echo "Press CTRL-C to keep it loaded."
+	nft_load
+	sleep 10
+	echo "Unloading nftables again."
+	nft_clean
+
+}
+
+nft_list() {
+	# List all rulesets.
+	$NFT list ruleset
+}
+
+usage() {
+	echo "Usage: $0 {start|stop|status|restart|save|load|test|list}"
+	echo
+	echo "  -c <file>    Define nftables rules file."
+	echo "  -n           Non interactive mode during nftables rules save."
+	echo
+}
+
+# Main Script
+
+# Save first command line argument.
+CMD=$1
+shift
+
+# Set command line options.
+while getopts ":c:n" opt; do
+	case $opt in
+		c)
+			FIREWALL=$OPTARG
+			;;
+		n)
+			FORCE=1
+			;;
+		\?)
+			echo "Error: Invalid option: -$OPTARG" >&2
+			usage
+			exit 1
+			;;
+	esac
+done
+
+case "$CMD" in
+        start)
+                nft_load
+                ;;
+        stop)
+                nft_clean
+                ;;
+        restart)
+                nft_load
+                ;;
+	status)
+		nft_status
+		;;
+        list)
+                nft_list
+                ;;
+        save)
+                nft_save
+                ;;
+        load)
+		echo "Loading nftables rules from file '$FIREWALL'."
+                nft_load
+                ;;
+	test)
+		nft_test
+		;;
+        *)
+                usage
+                exit 1
+                ;;
+esac
+

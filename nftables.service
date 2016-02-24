@@ -1,0 +1,14 @@
+[Unit]
+Description=Load nftables rules
+After=network-pre.target
+Before=network-online.target network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nftablesctl start
+ExecStop=/usr/sbin/nftablesctl stop
+
+[Install]
+WantedBy=multi-user.target network-online.target
+
